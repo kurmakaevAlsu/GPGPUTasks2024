@@ -1,5 +1,6 @@
 
 #define WORK_GROUP_SIZE 4
+#define TILE_SIZE 16
 
 __kernel void fill_with_zeros(__global unsigned int *as, unsigned int n)
 {
@@ -16,9 +17,49 @@ __kernel void count(__global unsigned int *as, __global unsigned int *counters, 
         return;
     }
     unsigned int value = (as[gid] >> shift) & ((1 << bits_count) - 1); 
-//    unsigned int wgid = get_group_id(0);
-//    unsigned int bit_idx = (as[gid] >> shift) & ((1 << bits_count) - 1);
-    atomic_inc(&counters[value]);
+    unsigned int wgid = get_group_id(0);
+    atomic_inc(&counters[wgid * (1 << bits_count) + value]);
+}
+
+__kernel void matrix_transpose_naive(
+    __global float *a,
+    __global float *at,
+    unsigned int m,
+    unsigned int k
+) {
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+    if (i < k && j < m) {
+        at[i * m + j] = a[j * k + i];
+    }
+}
+
+__kernel void matrix_transpose_local_good_banks(
+    __global float *a,
+    __global float *at,
+    unsigned int m,
+    unsigned int k
+) {
+    int i = get_global_id(0);
+    int j = get_global_id(1);
+
+    __local float tile[TILE_SIZE][TILE_SIZE + 1];
+    int local_i = get_local_id(0);
+    int local_j = get_local_id(1);
+
+    if (i < k && j < m) {
+        tile[local_j][local_i] = a[j * k + i];
+    } else {
+        tile[local_j][local_i] = 0;
+    }
+
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    int target_j = (i - local_i) + local_j;
+    int target_i = (j - local_j) + local_i;
+    if (target_i < k && target_j < m) {
+        at[target_j * k + target_i] = tile[local_i][local_j];
+    }
 }
 
 __kernel void prefix_sum(__global unsigned int *as, __global unsigned int *bs, unsigned int i, unsigned int n)
@@ -43,10 +84,10 @@ __kernel void radix_sort(__global unsigned int *as, __global unsigned int *bs, _
 
     unsigned int value = (as[gid] >> shift) & ((1 << bits_count) - 1);
     
-//    unsigned int wgid = get_group_id(0);
+    unsigned int wgid = get_group_id(0);
 //    unsigned int bit_idx = (as[gid] >> shift) & ((1 << bits_count) - 1);
     
-    unsigned int start = 0;//wgid * WORK_GROUP_SIZE;
+    unsigned int start = wgid * WORK_GROUP_SIZE;
     unsigned int end = gid;
     unsigned int offset = 0;
    
@@ -58,11 +99,14 @@ __kernel void radix_sort(__global unsigned int *as, __global unsigned int *bs, _
     }
 
     unsigned int base_idx;
-    if (value > 0) {
-        base_idx = counters[value - 1];
+    unsigned int counters_idx = wgid + value * WORK_GROUP_SIZE;
+    if (counters_idx > 0) {
+        base_idx = counters[counters_idx - 1];
     } else {
         base_idx = 0;
     }
+
+    printf("gid = %d, wgid = %d, cidx = %d, base = %d, offset = %d\n", gid, wgid, counters_idx, base_idx, offset);
 
 //    unsigned int prev_count;
 //    if (wgid == 0 && bit_idx == 0) {

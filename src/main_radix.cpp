@@ -11,11 +11,13 @@
 #include <stdexcept>
 #include <vector>
 
+#define TILE_SIZE 16
+
 const int benchmarkingIters = 10;
 const int benchmarkingItersCPU = 1;
 const unsigned int n = 16;// * 1024;
 
-const int bits_count = 4;
+const int bits_count = 2;
 
 template<typename T>
 void raiseFail(const T &a, const T &b, std::string message, std::string filename, int line) {
@@ -54,15 +56,16 @@ int main(int argc, char **argv) {
     std::vector<unsigned int> as(n, 0);
     FastRandom r(n);
     for (unsigned int i = 0; i < n; ++i) {
-        as[i] = (unsigned int) r.next(0, std::numeric_limits<int>::max()) % 16;
+        as[i] = (unsigned int) r.next(0, std::numeric_limits<int>::max()) % 4;
     }
     std::cout << "Data generated for n=" << n << "!" << std::endl;
 
     const std::vector<unsigned int> cpu_reference = computeCPU(as);
     
     unsigned int workGroupSize = 4;
-    unsigned int globalWorkSize = n;//(n + workGroupSize - 1) / workGroupSize * workGroupSize;
-    unsigned int countersSize = globalWorkSize / workGroupSize * bits_count;
+    unsigned int workGroupsCount = (n + workGroupSize - 1) / workGroupSize;
+    unsigned int globalWorkSize = workGroupsCount * workGroupSize;
+    unsigned int countersSize = workGroupsCount * (1 << bits_count);
     unsigned int countersWorkSize = (countersSize + workGroupSize - 1) / workGroupSize * workGroupSize;
 
     gpu::gpu_mem_32u as_gpu;
@@ -80,6 +83,8 @@ int main(int argc, char **argv) {
         fill_with_zeros.compile();
         ocl::Kernel count(radix_kernel, radix_kernel_length, "count");
         count.compile();
+        ocl::Kernel transpose(radix_kernel, radix_kernel_length, "matrix_transpose_naive");
+        transpose.compile();
         ocl::Kernel prefix_sum(radix_kernel, radix_kernel_length, "prefix_sum");
         prefix_sum.compile();
         ocl::Kernel radix_sort(radix_kernel, radix_kernel_length, "radix_sort");
@@ -88,7 +93,7 @@ int main(int argc, char **argv) {
 	std::vector<unsigned int> counters(countersSize, 0);
         
         timer t;
-//        for (int iter = 0; iter < benchmarkingIters; ++iter) {
+        for (int iter = 0; iter < benchmarkingIters; ++iter) {
             as_gpu.writeN(as.data(), n);
             t.restart();
             
@@ -103,12 +108,26 @@ int main(int argc, char **argv) {
 		std::cout << "Shift: " << shift << std::endl;
                 fill_with_zeros.exec(gpu::WorkSize(workGroupSize, countersWorkSize), counters_gpu, countersSize);
                 count.exec(gpu::WorkSize(workGroupSize, globalWorkSize), as_gpu, counters_gpu, n, shift, bits_count);
+
 		counters_gpu.readN(counters.data(), countersSize);
 		std::cout << "Count: " << std::endl;
 		for  (int i = 0; i < countersSize; i++) {
 			std::cout << counters[i] << " ";
 		}
 		std::cout << std::endl;
+
+unsigned int x_size = ((1 << bits_count) + TILE_SIZE - 1) / TILE_SIZE * TILE_SIZE;
+unsigned int y_size = (workGroupsCount + TILE_SIZE - 1) / TILE_SIZE * TILE_SIZE;
+                transpose.exec(gpu::WorkSize(TILE_SIZE, TILE_SIZE, x_size, y_size), counters_gpu, counters_gpu_tmp, 1 << bits_count, workGroupsCount);
+                std::swap(counters_gpu, counters_gpu_tmp);
+
+                counters_gpu.readN(counters.data(), countersSize);
+                std::cout << "Transpose: " << std::endl;
+                for  (int i = 0; i < countersSize; i++) {
+                        std::cout << counters[i] << " ";
+                }
+                std::cout << std::endl;
+
                 for (unsigned int i = 1; i < countersSize; i *= 2) {
 //			std::cout << "i = " << i << std::endl;
                     prefix_sum.exec(gpu::WorkSize(workGroupSize, countersWorkSize), counters_gpu, counters_gpu_tmp, i, countersSize);
@@ -127,6 +146,7 @@ int main(int argc, char **argv) {
                         std::cout << counters[i] << " ";
                 }
                 std::cout << std::endl;
+
                 radix_sort.exec(gpu::WorkSize(workGroupSize, globalWorkSize), as_gpu, bs_gpu, counters_gpu, n, shift, bits_count);
                 std::swap(as_gpu, bs_gpu);
 
@@ -136,8 +156,7 @@ int main(int argc, char **argv) {
                         std::cout << as[i] << " ";
                 }
                 std::cout << std::endl;
-//            }
-            
+            }
             t.nextLap();
 //        }
         t.stop();
