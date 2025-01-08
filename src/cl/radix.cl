@@ -72,7 +72,6 @@ __kernel void radix_sort(__global unsigned int *as, __global unsigned int *bs, _
     unsigned int value = (as[gid] >> shift) & ((1 << bits_count) - 1);
     
     unsigned int wgid = get_group_id(0);
-//    unsigned int bit_idx = (as[gid] >> shift) & ((1 << bits_count) - 1);
     
     unsigned int start = wgid * WORK_GROUP_SIZE;
     unsigned int end = gid;
@@ -93,16 +92,5 @@ __kernel void radix_sort(__global unsigned int *as, __global unsigned int *bs, _
         base_idx = 0;
     }
 
-//    printf("gid = %d, wgid = %d, cidx = %d, base = %d, offset = %d\n", gid, wgid, counters_idx, base_idx, offset);
-
-//    unsigned int prev_count;
-//    if (wgid == 0 && bit_idx == 0) {
-//        prev_count = 0;
-//    } else {
-//        prev_count = counters[wgid + bits_count * bit_idx - 1];
-//    }
-    
-//unsigned int tmp = as[gid];
-//printf("%d - %d\n", gid, tmp);
     bs[base_idx + offset] = as[gid];
 }

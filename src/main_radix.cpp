@@ -93,65 +93,30 @@ int main(int argc, char **argv) {
 	std::vector<unsigned int> counters(countersSize, 0);
         
         timer t;
-//        for (int iter = 0; iter < benchmarkingIters; ++iter) {
+        for (int iter = 0; iter < benchmarkingIters; ++iter) {
             as_gpu.writeN(as.data(), n);
             t.restart();
-            
-/*		std::cout << "Source array: " << std::endl;
-                for  (int i = 0; i < n; i++) {
-                        std::cout << as[i] << " ";
-                }
-                std::cout << std::endl;*/
 
-//		unsigned int shift = 0;
             for (unsigned int shift = 0; shift < 32; shift += bits_count) {
-//		std::cout << "Shift: " << shift << std::endl;
                 fill_with_zeros.exec(gpu::WorkSize(workGroupSize, countersWorkSize), counters_gpu, countersSize);
-                count.exec(gpu::WorkSize(workGroupSize, globalWorkSize), as_gpu, counters_gpu, n, shift, bits_count);
 
-/*		counters_gpu.readN(counters.data(), countersSize);
-		std::cout << "Count: " << std::endl;
-		for  (int i = 0; i < countersSize; i++) {
-			std::cout << counters[i] << " ";
-		}
-		std::cout << std::endl;*/
+                count.exec(gpu::WorkSize(workGroupSize, globalWorkSize), as_gpu, counters_gpu, n, shift, bits_count);
 
                 unsigned int x_size = ((1 << bits_count) + TILE_SIZE - 1) / TILE_SIZE * TILE_SIZE;
                 unsigned int y_size = (workGroupsCount + TILE_SIZE - 1) / TILE_SIZE * TILE_SIZE;
                 transpose.exec(gpu::WorkSize(TILE_SIZE, TILE_SIZE, x_size, y_size), counters_gpu, counters_gpu_tmp, 1 << bits_count, workGroupsCount);
                 std::swap(counters_gpu, counters_gpu_tmp);
 
-/*                counters_gpu.readN(counters.data(), countersSize);
-                std::cout << "Transpose: " << std::endl;
-                for  (int i = 0; i < countersSize; i++) {
-                        std::cout << counters[i] << " ";
-                }
-                std::cout << std::endl;*/
-
                 for (unsigned int i = 1; i < countersSize; i *= 2) {
                     prefix_sum.exec(gpu::WorkSize(workGroupSize, countersWorkSize), counters_gpu, counters_gpu_tmp, i, countersSize);
                     std::swap(counters_gpu, counters_gpu_tmp);
                 }
 
-/*		counters_gpu.readN(counters.data(), countersSize);
-                std::cout << "Prefix sum: " << std::endl;
-                for  (int i = 0; i < countersSize; i++) {
-                        std::cout << counters[i] << " ";
-                }
-                std::cout << std::endl;*/
-
                 radix_sort.exec(gpu::WorkSize(workGroupSize, globalWorkSize), as_gpu, bs_gpu, counters_gpu, n, shift, bits_count);
                 std::swap(as_gpu, bs_gpu);
-
-/*		as_gpu.readN(as.data(), n);
-                std::cout << "Sorted array: " << std::endl;
-                for  (int i = 0; i < n; i++) {
-                        std::cout << as[i] << " ";
-                }
-                std::cout << std::endl;*/
             }
             t.nextLap();
-//        }
+        }
         t.stop();
 
         std::cout << "GPU: " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
