@@ -13,7 +13,7 @@
 
 const int benchmarkingIters = 10;
 const int benchmarkingItersCPU = 1;
-const unsigned int n = 32 * 1024 * 1024;
+const unsigned int n = 32 * 1024;// * 1024;
 
 const int bits_count = 4;
 
