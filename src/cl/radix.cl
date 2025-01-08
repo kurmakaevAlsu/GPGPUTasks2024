@@ -1,5 +1,5 @@
 
-#define WORK_GROUP_SIZE 128
+#define WORK_GROUP_SIZE 4
 
 __kernel void fill_with_zeros(__global unsigned int *as, unsigned int n)
 {
@@ -15,9 +15,10 @@ __kernel void count(__global unsigned int *as, __global unsigned int *counters, 
     if (gid >= n) {
         return;
     }
-    unsigned int wgid = get_group_id(0);
-    unsigned int bit_idx = (as[gid] >> shift) & ((1 << bits_count) - 1);
-    atomic_inc(&counters[wgid + bits_count * bit_idx]);
+    unsigned int value = (as[gid] >> shift) & ((1 << bits_count) - 1); 
+//    unsigned int wgid = get_group_id(0);
+//    unsigned int bit_idx = (as[gid] >> shift) & ((1 << bits_count) - 1);
+    atomic_inc(&counters[value]);
 }
 
 __kernel void prefix_sum(__global unsigned int *as, __global unsigned int *bs, unsigned int i, unsigned int n)
@@ -39,29 +40,38 @@ __kernel void radix_sort(__global unsigned int *as, __global unsigned int *bs, _
     if (gid >= n) {
         return;
     }
+
+    unsigned int value = (as[gid] >> shift) & ((1 << bits_count) - 1);
     
-    unsigned int wgid = get_group_id(0);
-    unsigned int bit_idx = (as[gid] >> shift) & ((1 << bits_count) - 1);
+//    unsigned int wgid = get_group_id(0);
+//    unsigned int bit_idx = (as[gid] >> shift) & ((1 << bits_count) - 1);
     
-    unsigned int start = wgid * WORK_GROUP_SIZE;
+    unsigned int start = 0;//wgid * WORK_GROUP_SIZE;
     unsigned int end = gid;
-    unsigned int local_count = 0;
+    unsigned int offset = 0;
    
     for (unsigned int i = start; i < end; ++i) {
-        unsigned int local_bit_idx = (as[gid] >> shift) & ((1 << bits_count) - 1);
-        if (local_bit_idx == bit_idx) {
-            ++local_count;
+        unsigned int prev_value = (as[i] >> shift) & ((1 << bits_count) - 1);
+        if (prev_value == value) {
+            ++offset;
         }
     }
-    
-    unsigned int prev_count;
-    if (wgid == 0 && bit_idx == 0) {
-        prev_count = 0;
+
+    unsigned int base_idx;
+    if (value > 0) {
+        base_idx = counters[value - 1];
     } else {
-        prev_count = counters[wgid + bits_count * bit_idx - 1];
+        base_idx = 0;
     }
+
+//    unsigned int prev_count;
+//    if (wgid == 0 && bit_idx == 0) {
+//        prev_count = 0;
+//    } else {
+//        prev_count = counters[wgid + bits_count * bit_idx - 1];
+//    }
     
-unsigned int tmp = as[gid];
+//unsigned int tmp = as[gid];
 //printf("%d - %d\n", gid, tmp);
-    bs[local_count + prev_count] = tmp;
+    bs[base_idx + offset] = as[gid];
 }

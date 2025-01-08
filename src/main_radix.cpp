@@ -13,7 +13,7 @@
 
 const int benchmarkingIters = 10;
 const int benchmarkingItersCPU = 1;
-const unsigned int n = 32 * 1024;// * 1024;
+const unsigned int n = 16;// * 1024;
 
 const int bits_count = 4;
 
@@ -54,14 +54,14 @@ int main(int argc, char **argv) {
     std::vector<unsigned int> as(n, 0);
     FastRandom r(n);
     for (unsigned int i = 0; i < n; ++i) {
-        as[i] = (unsigned int) r.next(0, std::numeric_limits<int>::max());
+        as[i] = (unsigned int) r.next(0, std::numeric_limits<int>::max()) % 16;
     }
     std::cout << "Data generated for n=" << n << "!" << std::endl;
 
     const std::vector<unsigned int> cpu_reference = computeCPU(as);
     
-    unsigned int workGroupSize = 128;
-    unsigned int globalWorkSize = (n + workGroupSize - 1) / workGroupSize * workGroupSize;
+    unsigned int workGroupSize = 4;
+    unsigned int globalWorkSize = n;//(n + workGroupSize - 1) / workGroupSize * workGroupSize;
     unsigned int countersSize = globalWorkSize / workGroupSize * bits_count;
     unsigned int countersWorkSize = (countersSize + workGroupSize - 1) / workGroupSize * workGroupSize;
 
@@ -85,25 +85,61 @@ int main(int argc, char **argv) {
         ocl::Kernel radix_sort(radix_kernel, radix_kernel_length, "radix_sort");
         radix_sort.compile();
         
+	std::vector<unsigned int> counters(countersSize, 0);
         
         timer t;
-        for (int iter = 0; iter < benchmarkingIters; ++iter) {
+//        for (int iter = 0; iter < benchmarkingIters; ++iter) {
             as_gpu.writeN(as.data(), n);
             t.restart();
             
-            for (unsigned int shift = 0; shift < 32; shift += bits_count) {
+		std::cout << "Source array: " << std::endl;
+                for  (int i = 0; i < n; i++) {
+                        std::cout << as[i] << " ";
+                }
+                std::cout << std::endl;
+
+		unsigned int shift = 0;
+//            for (unsigned int shift = 0; shift < 32; shift += bits_count) {
+		std::cout << "Shift: " << shift << std::endl;
                 fill_with_zeros.exec(gpu::WorkSize(workGroupSize, countersWorkSize), counters_gpu, countersSize);
                 count.exec(gpu::WorkSize(workGroupSize, globalWorkSize), as_gpu, counters_gpu, n, shift, bits_count);
+		counters_gpu.readN(counters.data(), countersSize);
+		std::cout << "Count: " << std::endl;
+		for  (int i = 0; i < countersSize; i++) {
+			std::cout << counters[i] << " ";
+		}
+		std::cout << std::endl;
                 for (unsigned int i = 1; i < countersSize; i *= 2) {
+//			std::cout << "i = " << i << std::endl;
                     prefix_sum.exec(gpu::WorkSize(workGroupSize, countersWorkSize), counters_gpu, counters_gpu_tmp, i, countersSize);
                     std::swap(counters_gpu, counters_gpu_tmp);
+/*                std::cout << "Count: " << std::endl;
+                for  (int i = 0; i < countersSize; i++) {
+                        std::cout << counters[i] << " ";
                 }
+                std::cout << std::endl;*/
+
+                }
+
+		counters_gpu.readN(counters.data(), countersSize);
+                std::cout << "Prefix sum: " << std::endl;
+                for  (int i = 0; i < countersSize; i++) {
+                        std::cout << counters[i] << " ";
+                }
+                std::cout << std::endl;
                 radix_sort.exec(gpu::WorkSize(workGroupSize, globalWorkSize), as_gpu, bs_gpu, counters_gpu, n, shift, bits_count);
                 std::swap(as_gpu, bs_gpu);
-            }
+
+		as_gpu.readN(as.data(), n);
+                std::cout << "Sorted array: " << std::endl;
+                for  (int i = 0; i < n; i++) {
+                        std::cout << as[i] << " ";
+                }
+                std::cout << std::endl;
+//            }
             
             t.nextLap();
-        }
+//        }
         t.stop();
 
         std::cout << "GPU: " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
