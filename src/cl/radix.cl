@@ -21,19 +21,6 @@ __kernel void count(__global unsigned int *as, __global unsigned int *counters, 
     atomic_inc(&counters[wgid * (1 << bits_count) + value]);
 }
 
-__kernel void matrix_transpose_naive(
-    __global float *a,
-    __global float *at,
-    unsigned int m,
-    unsigned int k
-) {
-    int i = get_global_id(0);
-    int j = get_global_id(1);
-    if (i < k && j < m) {
-        at[i * m + j] = a[j * k + i];
-    }
-}
-
 __kernel void matrix_transpose_local_good_banks(
     __global float *a,
     __global float *at,
@@ -106,7 +93,7 @@ __kernel void radix_sort(__global unsigned int *as, __global unsigned int *bs, _
         base_idx = 0;
     }
 
-    printf("gid = %d, wgid = %d, cidx = %d, base = %d, offset = %d\n", gid, wgid, counters_idx, base_idx, offset);
+//    printf("gid = %d, wgid = %d, cidx = %d, base = %d, offset = %d\n", gid, wgid, counters_idx, base_idx, offset);
 
 //    unsigned int prev_count;
 //    if (wgid == 0 && bit_idx == 0) {
